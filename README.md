@@ -316,16 +316,3 @@ Default local services:
 
 ---
 
-## Why This Repo Is Strong Portfolio Material
-
-This project demonstrates more than just training a model. It shows how to:
-
-- encode a business problem with asymmetric cost
-- build reusable sklearn-compatible feature engineering
-- tailor preprocessing to different model families
-- combine heterogeneous models into one production decision rule
-- keep probability semantics consistent from backend to UI
-- package the whole workflow into a testable, deployable application
-
-If you are reviewing it as a portfolio piece, the main value is the combination
-of **ML judgment**, **software structure**, and **practical delivery**.
