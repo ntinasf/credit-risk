@@ -6,7 +6,7 @@ The system trains four complementary models, combines them in a weighted
 ensemble, tracks experiments with MLflow, exports deployable inference
 artifacts, and serves predictions through a Streamlit app.
 
-**Hosted demo:** coming soon  
+**Hosted demo:** [Try it!](https://credit-risk-h6wzqyepauzgpp29kypx9e.streamlit.app)
 **Repository:** [https://github.com/ntinasf/credit-risk](https://github.com/ntinasf/credit-risk)
 
 ---
@@ -313,6 +313,4 @@ Default local services:
 - [`docs/architecture.html`](docs/architecture.html) — system overview and
   architecture diagram
 - `notebooks/investigation.ipynb` — analysis and evaluation workflow
-
----
 
