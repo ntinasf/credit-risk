@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install ruff
+        run: uv tool install ruff
+
+      - name: Lint
+        run: uv run ruff check src/ tests/ app/
+
+      - name: Format check
+        run: uv run ruff format --check src/ tests/ app/
+
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Sync dependencies
+        run: uv sync --extra dev
+
+      - name: Process and split data
+        run: |
+          uv run python scripts/process_data.py
+          uv run python scripts/split_data.py --test-size 0.15
+
+      - name: Train lightweight models for tests
+        # The conftest.py mock_pipelines fixture fits models at test time —
+        # no pre-training needed for unit/integration tests.
+        # This step is only needed if you add tests that require registered models.
+        run: echo "No pre-training needed — test fixtures handle model fitting"
+
+      - name: Run tests
+        run: uv run pytest tests/ -v --cov=credit_risk_model --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: coverage.xml
+
+  build-docker:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t credit-risk-app:${{ github.sha }} .
+
+      - name: Smoke test the image
+        run: |
+          if ls app/models/*_pipeline.pkl >/dev/null 2>&1; then
+            docker run -d --name smoke-test \
+              -p 8501:8501 \
+              credit-risk-app:${{ github.sha }}
+            sleep 10
+            curl -f http://localhost:8501/_stcore/health
+            docker stop smoke-test
+          else
+            echo "Skipping smoke test — no .pkl files in app/models/"
+          fi

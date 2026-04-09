@@ -1,0 +1,168 @@
+# ----------------------------------------------------
+# Single source of truth for model configuration parameters
+# ----------------------------------------------------
+
+# -- Data --------------------------------------------
+training_data_file: train_data.csv
+test_data_file: test_data.csv
+target: class
+
+# -- Reproducibility ---------------------------------
+random_state: 8
+val_size: 150
+
+# -- Cost Matrix (from documentation) ----------------
+cost_matrix:
+  false_positive: 5  # approving a bad borrower
+  false_negative: 1  # rejecting a good borrower
+
+# -- Ensemble Model Parameters ------------------------
+ensemble:
+  threshold: 0.83
+  weights:
+    lrc: 2.5
+    rfc: 1.5
+    svc: 1.5
+    cat: 1.0
+
+# --  MLflow -------------------------------------------
+mlflow:
+  backend_store_uri: sqlite:///mlflow.db
+  experiment_name: credit_risk_ensemble
+
+# -- Model Configurations ----------------------------------
+models:
+  lrc:
+    experiment_name: credit_risk_logistic_regression
+    registry_name: credit_risk_lrc
+    cv_folds: 8
+    bayes_n_iter: 20
+    bayes_n_points: 10
+    use_smote: true
+    smote_type: smote
+    # Encoding column assignments (from FeatureEngineer output)
+    one_hot_cols:
+      - credit_history
+      - savings_account_bonds
+      - present_residence_since
+      - personal_status_sex
+      - age_group
+      - job
+      - foreign_worker
+    woe_cols:
+      - checking_account_status
+      - purpose
+      - present_employment_since
+      - property
+      - housing
+    count_cols:
+      - installment_rate_pct_of_disp_income
+      - other_installment_plans
+    numeric_scaled_cols:
+      - duration_log
+      - credit_log
+      - existing_credits_count
+      - monthly_burden_log
+    passthrough_cols:
+      - no_checking
+
+  rfc:
+    experiment_name: credit_risk_random_forest
+    registry_name: credit_risk_rfc
+    cv_folds: 8
+    bayes_n_iter: 20
+    bayes_n_points: 10
+    use_smote: false
+    class_weight: {0: 1, 1: 5}  # from cost matrix
+    duplicate_checking: true # FeatureEngineer creates checking_2, personal_status_2
+    one_hot_cols:
+      - credit_history
+      - purpose
+      - savings_account_bonds
+      - present_employment_since
+      - personal_status_sex
+      - other_installment_plans
+      - housing
+      - foreign_worker
+    ordinal_cols:
+      - installment_rate_pct_of_disp_income
+      - job
+      - personal_status_2
+      - checking_account_status
+      - age_group
+    target_cols:
+      - property
+    numeric_scaled_cols:
+      - credit_log
+      - duration_to_age_ratio
+    passthrough_cols:
+      - no_checking
+      - present_residence_since
+      - existing_credits_count
+      - monthly_burden
+
+  svc:
+    experiment_name: credit_risk_svc
+    registry_name: credit_risk_svc
+    cv_folds: 8
+    bayes_n_iter: 20
+    bayes_n_points: 10
+    use_smote: true
+    smote_type: svmsmote
+    duplicate_amount: true # FeatureEngineer creates credit_amount_squared
+    one_hot_cols:
+      - credit_history
+      - savings_account_bonds
+      - present_residence_since
+      - personal_status_sex
+      - purpose
+      - checking_account_status
+      - other_installment_plans
+    woe_cols:
+      - present_employment_since
+      - foreign_worker
+      - installment_rate_pct_of_disp_income
+    target_cols:
+      - job
+      - housing
+      - property
+    numeric_scaled_cols:
+      - credit_amount_squared
+      - age_years
+      - existing_credits_count
+      - monthly_burden_log
+      - duration_to_age_ratio
+    passthrough_cols:
+      - no_checking
+
+  cat:
+    experiment_name: credit_risk_catboost
+    registry_name: credit_risk_cat
+    cv_folds: 8
+    bayes_n_iter: 20
+    bayes_n_points: 10
+    scale_pos_weight: 5  # from cost matrix
+    numeric_cols:
+      - credit_log
+      - duration_log
+      - duration_to_age_ratio
+      - monthly_burden
+      - monthly_burden_log
+    categorical_cols:
+      - checking_account_status
+      - credit_history
+      - purpose
+      - savings_account_bonds
+      - present_employment_since
+      - personal_status_sex
+      - property
+      - other_installment_plans
+      - housing
+      - job
+      - foreign_worker
+      - age_group
+    passthrough_cols:
+      - no_checking
+      - installment_rate_pct_of_disp_income
+      - present_residence_since
+      - existing_credits_count

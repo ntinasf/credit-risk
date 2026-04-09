@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "credit-risk-project"
+name = "credit-risk-model"
 version = "0.1.0"
 description = "A project for predicting credit risk on the German Credit dataset using a 4 model voting ensemble."
 readme = "README.md"
