@@ -18,7 +18,6 @@ data/processed/
 mlruns/
 mlflow.db
 catboost_info/
-app/models/*.pkl
 
 # ── IDE / OS ──────────────────────────────────────────
 .DS_Store
