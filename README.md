@@ -6,7 +6,7 @@ The system trains four complementary models, combines them in a weighted
 ensemble, tracks experiments with MLflow, exports deployable inference
 artifacts, and serves predictions through a Streamlit app.
 
-**Hosted demo:** [Try it!](https://credit-risk-h6wzqyepauzgpp29kypx9e.streamlit.app)
+**Hosted demo:** [Try here](https://credit-risk-h6wzqyepauzgpp29kypx9e.streamlit.app)
 **Repository:** [https://github.com/ntinasf/credit-risk](https://github.com/ntinasf/credit-risk)
 
 ---
