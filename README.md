@@ -7,7 +7,6 @@ ensemble, tracks experiments with MLflow, exports deployable inference
 artifacts, and serves predictions through a Streamlit app.
 
 **Hosted demo:** [Try here](https://credit-risk-h6wzqyepauzgpp29kypx9e.streamlit.app)
-**Repository:** [https://github.com/ntinasf/credit-risk](https://github.com/ntinasf/credit-risk)
 
 ---
 
@@ -15,7 +14,7 @@ artifacts, and serves predictions through a Streamlit app.
 
 This repository is built around a practical lending problem: how to make better
 approval decisions when the cost of a bad approval is much higher than the cost
-of a missed good customer.
+of a missed good customer. At the same time, the dataset is small and rather imbalanced, which requires careful feature engineering and modeling strategies.
 
 The project includes:
 
@@ -37,7 +36,7 @@ The project includes:
 | Area | What it demonstrates |
 | --- | --- |
 | **Business Framing** | Cost-sensitive decisioning with `FP = 5` and `FN = 1` |
-| **Modeling** | Four-model weighted soft-voting ensemble |
+| **Modeling** | Four-model, weighted soft-voting ensemble |
 | **Feature Engineering** | Reusable domain-specific `FeatureEngineer` transformer |
 | **Preprocessing** | Model-specific encoders instead of one generic pipeline |
 | **Imbalance Handling** | SMOTE, SVMSMOTE, and cost-aware weighting strategies |
@@ -71,9 +70,6 @@ The Streamlit app also shows:
 ```text
 Default risk = 1 - P(class = 1)
 ```
-
-This split is intentional: the modeling layer stays consistent with the encoded
-target, while the UI presents a more intuitive business-facing risk view.
 
 ---
 
@@ -181,7 +177,7 @@ credit-risk-project/
 │   ├── architecture.html
 │   └── instructions.md
 ├── notebooks/
-│   ├── example.ipynb
+│   ├── feature_engineering.ipynb
 │   └── investigation.ipynb
 ├── scripts/
 │   ├── export_pipelines.py
@@ -312,5 +308,6 @@ Default local services:
   workflow, and troubleshooting
 - [`docs/architecture.html`](docs/architecture.html) — system overview and
   architecture diagram
-- `notebooks/investigation.ipynb` — analysis and evaluation workflow
+- [`notebooks/investigation.ipynb`](notebooks/investigation.ipynb) — analysis and evaluation workflow
+- [`notebooks/feature_engineering.ipynb`](notebooks/feature_engineering.ipynb) — feature engineering exploration and validation
 

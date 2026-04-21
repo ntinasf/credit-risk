@@ -45,16 +45,16 @@ models:
       - credit_history
       - savings_account_bonds
       - present_residence_since
-      - personal_status_sex
-      - age_group
-      - job
-      - foreign_worker
+      - purpose
     woe_cols:
       - checking_account_status
-      - purpose
       - present_employment_since
       - property
       - housing
+      - age_group
+      - job
+      - foreign_worker
+      - personal_status_sex
     count_cols:
       - installment_rate_pct_of_disp_income
       - other_installment_plans
@@ -73,6 +73,7 @@ models:
     bayes_n_iter: 20
     bayes_n_points: 10
     use_smote: false
+    #smote_type: smote
     class_weight: {0: 1, 1: 5}  # from cost matrix
     duplicate_checking: true # FeatureEngineer creates checking_2, personal_status_2
     one_hot_cols:
@@ -90,16 +91,18 @@ models:
       - personal_status_2
       - checking_account_status
       - age_group
+      - existing_credits_count
     target_cols:
       - property
     numeric_scaled_cols:
       - credit_log
       - duration_to_age_ratio
+      - monthly_burden
     passthrough_cols:
       - no_checking
       - present_residence_since
-      - existing_credits_count
-      - monthly_burden
+      
+      
 
   svc:
     experiment_name: credit_risk_svc
@@ -146,8 +149,8 @@ models:
       - credit_log
       - duration_log
       - duration_to_age_ratio
-      - monthly_burden
       - monthly_burden_log
+      
     categorical_cols:
       - checking_account_status
       - credit_history
@@ -161,8 +164,12 @@ models:
       - job
       - foreign_worker
       - age_group
+      - present_residence_since
+      
     passthrough_cols:
       - no_checking
       - installment_rate_pct_of_disp_income
-      - present_residence_since
       - existing_credits_count
+      
+      
+      
