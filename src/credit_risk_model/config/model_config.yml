@@ -18,11 +18,11 @@ cost_matrix:
 
 # -- Ensemble Model Parameters ------------------------
 ensemble:
-  threshold: 0.83
+  threshold: 0.84
   weights:
-    lrc: 2.5
-    rfc: 1.5
-    svc: 1.5
+    lrc: 1.0
+    rfc: 2.0
+    svc: 2.0
     cat: 1.0
 
 # --  MLflow -------------------------------------------

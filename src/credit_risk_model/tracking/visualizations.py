@@ -87,13 +87,19 @@ def plot_confusion_matrix(
     y_pred: np.ndarray,
     title: str = "Confusion Matrix",
     labels: list[str] | None = None,
+    ax: plt.Axes | None = None,
 ) -> plt.Figure:
     """Plot confusion matrix with both counts and percentage annotations."""
     labels = labels or ["Bad (0)", "Good (1)"]
     cm = confusion_matrix(y_true, y_pred)
     n = cm.sum()
 
-    fig, ax = plt.subplots(figsize=(6, 5))
+    created_ax = ax is None
+    if created_ax:
+        fig, ax = plt.subplots(figsize=(6, 5))
+    else:
+        fig = ax.figure
+
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
     disp.plot(ax=ax, colorbar=False, cmap="Blues")
 
@@ -112,7 +118,9 @@ def plot_confusion_matrix(
             )
 
     ax.set_title(title)
-    plt.tight_layout()
+    ax.grid(False)
+    if created_ax:
+        plt.tight_layout()
     return fig
 
 
@@ -120,9 +128,15 @@ def plot_precision_recall_curve(
     y_true: np.ndarray,
     y_proba: np.ndarray,
     title: str = "Precision-Recall Curve",
+    ax: plt.Axes | None = None,
 ) -> plt.Figure:
-    """Plot PR curve with no-skill baseline and average precision annotation."""
-    fig, ax = plt.subplots(figsize=(8, 6))
+    """Plot PR curve with no-skill baseline and AP annotation."""
+    created_ax = ax is None
+    if created_ax:
+        fig, ax = plt.subplots(figsize=(8, 6))
+    else:
+        fig = ax.figure
+
     PrecisionRecallDisplay.from_predictions(
         y_true,
         y_proba,
@@ -132,11 +146,17 @@ def plot_precision_recall_curve(
 
     # No-skill baseline: proportion of positive class
     no_skill = y_true.mean()
-    ax.axhline(y=no_skill, color="gray", linestyle="--", label=f"No Skill (AP={no_skill:.2f})")
+    ax.axhline(
+        y=no_skill,
+        color="gray",
+        linestyle="--",
+        label=f"No Skill (AP={no_skill:.2f})",
+    )
 
     ap = average_precision_score(y_true, y_proba)
     ax.set_title(f"{title} (AP={ap:.3f})")
     ax.legend()
     ax.grid(alpha=0.3)
-    plt.tight_layout()
+    if created_ax:
+        plt.tight_layout()
     return fig
