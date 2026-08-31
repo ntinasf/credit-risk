@@ -22,9 +22,6 @@ import logging
 import sys
 import warnings
 
-import pandas as pd
-from sklearn.model_selection import train_test_split
-
 # Suppress noisy loky worker-timeout warnings (benign on macOS/Apple Silicon)
 warnings.filterwarnings(
     "ignore",
@@ -32,7 +29,7 @@ warnings.filterwarnings(
     category=UserWarning,
 )
 
-from credit_risk_model.config.core import DATA_DIR, config
+from credit_risk_model.data import load_train_validation_split
 from credit_risk_model.training.train_catboost import CatBoostTrainer
 from credit_risk_model.training.train_lrc import LRCTrainer
 from credit_risk_model.training.train_rf import RFTrainer
@@ -70,40 +67,20 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # ── Load data ─────────────────────────────────────────────────────────
-    train_path = DATA_DIR / config.training_data_file
-    if not train_path.exists():
-        logger.error(
-            f"Training data not found at {train_path}.\n"
-            "Run the data pipeline first:\n"
-            "  uv run python scripts/process_data.py\n"
-            "  uv run python scripts/split_data.py"
-        )
+    # ── Load the canonical split (shared with scripts/select_ensemble.py) ──
+    try:
+        X_train, X_val, y_train, y_val = load_train_validation_split()
+    except FileNotFoundError as exc:
+        logger.error(str(exc))
         sys.exit(1)
 
-    df = pd.read_csv(train_path)
-    X = df.drop(columns=[config.target])
-    y = df[config.target]
-
-    logger.info(f"Loaded {len(df)} training samples from {train_path}")
-
-    # ── Hold out a validation set (not used in CV) ────────────────────────
-    X_train, X_val, y_train, y_val = train_test_split(
-        X,
-        y,
-        test_size=config.val_size,
-        random_state=config.random_state,
-        stratify=y,
-    )
     logger.info(
         f"Split: {len(X_train)} train / {len(X_val)} val  "
         f"(val class balance: {y_val.mean():.1%} positive)"
     )
 
     # ── Train ─────────────────────────────────────────────────────────────
-    models_to_train = (
-        {args.model: TRAINERS[args.model]} if args.model else TRAINERS
-    )
+    models_to_train = {args.model: TRAINERS[args.model]} if args.model else TRAINERS
 
     for key, TrainerClass in models_to_train.items():
         logger.info(f"{'━' * 60}")
@@ -120,12 +97,13 @@ def main() -> None:
         )
 
     logger.info(f"\n{'━' * 60}")
-    logger.info("✅ All done. Models registered in MLflow.")
+    logger.info("All done. Models registered in MLflow.")
     logger.info(
         "Next steps:\n"
-        "  uv run python scripts/score_ensemble.py   # evaluate ensemble\n"
-        "  uv run python scripts/export_pipelines.py  # export .pkl files\n"
-        "  uv run streamlit run app/streamlit_app.py   # launch app"
+        "  uv run python scripts/select_ensemble.py --write  # choose weights+threshold on val\n"
+        "  uv run python scripts/score_ensemble.py           # score test once\n"
+        "  uv run python scripts/export_pipelines.py         # export .pkl files\n"
+        "  uv run streamlit run app/streamlit_app.py         # launch app"
     )
 
 

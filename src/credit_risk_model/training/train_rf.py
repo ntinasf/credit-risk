@@ -9,9 +9,11 @@ class RFTrainer(BaseModelTrainer):
         return "rfc"
 
     def get_estimator(self):
-        # Cost-sensitive class weights match the 5:1 FP/FN cost ratio
+        # Class weights handle imbalance only (bad borrowers are ~29% of training
+        # rows). The 5:1 cost asymmetry is not encoded here. It is
+        # applied once, when the decision threshold is tuned on validation.
         return RandomForestClassifier(
-            class_weight=self.model_cfg.class_weight or {0: 1, 1: 5},
+            class_weight=self.model_cfg.class_weight,
             random_state=self.app_config.random_state,
             n_jobs=-1,
         )

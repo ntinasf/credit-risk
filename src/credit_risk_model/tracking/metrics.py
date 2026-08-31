@@ -43,18 +43,31 @@ def calculate_cost(
     return float(total_cost), float(avg_cost)
 
 
-def cost_scorer_fn(estimator, X, y):
-    """Negative cost scorer for search routines that expect higher-is-better.
+def trivial_policy_costs(
+    y_true: np.ndarray,
+    cost_fp: float = 5.0,
+    cost_fn: float = 1.0,
+) -> dict[str, float]:
+    """Cost of the two policies that use no model at all.
 
-    sklearn scorers follow the convention: higher = better.
-    Cost is lower = better, so we negate it.
+    Reported alongside model results so a reader can tell whether a given
+    cost is actually good. Approving everyone pays cost_fp for every bad
+    applicant; rejecting everyone pays cost_fn for every good one.
 
-    This function MUST be importable from the package so that pipelines
-    containing TunedThresholdClassifierCV can be deserialized correctly.
+    Returns
+    -------
+    dict with keys: always_approve_cost, always_reject_cost
     """
-    y_pred = estimator.predict(X)
-    total_cost, _ = calculate_cost(y, y_pred)
-    return -total_cost
+    y_true = np.asarray(y_true)
+    n = len(y_true)
+
+    approve_all, _ = calculate_cost(y_true, np.ones(n, dtype=int), cost_fp, cost_fn)
+    reject_all, _ = calculate_cost(y_true, np.zeros(n, dtype=int), cost_fp, cost_fn)
+
+    return {
+        "always_approve_cost": approve_all,
+        "always_reject_cost": reject_all,
+    }
 
 
 def evaluate_model(

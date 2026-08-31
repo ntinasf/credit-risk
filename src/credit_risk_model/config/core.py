@@ -49,7 +49,7 @@ class SingleModelConfig(BaseModel):
     smote_type: str = "smote"
     duplicate_checking: bool = False
     duplicate_amount: bool = False
-    class_weight: dict[int, int] | None = None
+    class_weight: dict[int, float] | str | None = None
     scale_pos_weight: float | None = None
     one_hot_cols: list[str] = []
     woe_cols: list[str] = []
@@ -60,6 +60,29 @@ class SingleModelConfig(BaseModel):
     numeric_cols: list[str] = []
     categorical_cols: list[str] = []
     passthrough_cols: list[str] = []
+
+    @field_validator("class_weight")
+    @classmethod
+    def class_weight_is_an_imbalance_strategy(cls, v):
+        """Only sklearn's named strategies or an explicit per-class dict.
+
+        Weights here express class *imbalance*. The cost matrix is separate; cost is
+        applied once, at the decision threshold. See model_config.yml.
+        """
+        if isinstance(v, str) and v not in {"balanced", "balanced_subsample"}:
+            raise ValueError(
+                f"class_weight string must be 'balanced' or 'balanced_subsample', got '{v}'"
+            )
+        return v
+
+    @field_validator("smote_type")
+    @classmethod
+    def smote_type_is_supported(cls, v: str) -> str:
+        """Fail at config load rather than silently using the wrong resampler."""
+        supported = {"smote", "svmsmote"}
+        if v not in supported:
+            raise ValueError(f"smote_type must be one of {sorted(supported)}, got '{v}'")
+        return v
 
 
 class AppConfig(BaseModel):

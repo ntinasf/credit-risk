@@ -69,8 +69,8 @@ def mock_pipelines(X_train_small, y_train_small):
     )
     pipelines["cat"] = build_catboost_pipeline(
         config.models["cat"],
-        random_state=8,
-        scale_pos_weight=5.0,
+        random_state=config.random_state,
+        scale_pos_weight=config.models["cat"].scale_pos_weight,
     )
     for pipeline in pipelines.values():
         pipeline.fit(X_train_small, y_train_small)

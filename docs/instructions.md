@@ -15,7 +15,7 @@
 4. [Data Preparation](#4-data-preparation)
 5. [Configuration Reference](#5-configuration-reference)
 6. [Training Workflow](#6-training-workflow)
-7. [Ensemble Scoring](#7-ensemble-scoring)
+7. [Ensemble Selection & Scoring](#7-ensemble-selection--scoring)
 8. [Exporting Pipelines](#8-exporting-pipelines)
 9. [Running the Streamlit App](#9-running-the-streamlit-app)
 10. [Docker Deployment](#10-docker-deployment)
@@ -47,7 +47,7 @@ Each model is trained independently with **Bayesian hyperparameter search**
 optional SMOTE/SVMSMOTE oversampling. All training runs are tracked in MLflow.
 
 A final ensemble script combines the four pipelines using weighted soft voting
-with a configurable approval threshold (default 0.83), registers the ensemble
+with an approval threshold chosen on the validation set (currently 0.66), registers the ensemble
 as a pyfunc model in MLflow, and exports pickle files for the Streamlit app.
 
 Throughout the project, `class = 1` means **good credit / low risk** and
@@ -77,7 +77,8 @@ credit-risk-project/
 │   ├── process_data.py          # Map raw german.data → german_credit.csv
 │   ├── split_data.py            # Stratified hash split → train + test CSVs
 │   ├── export_pipelines.py      # Export MLflow models → pickle files
-│   └── score_ensemble.py        # Evaluate ensemble, log to MLflow
+│   ├── select_ensemble.py       # Choose weights + threshold on validation
+│   └── score_ensemble.py        # Score that configuration once, on test
 ├── src/credit_risk_model/
 │   ├── config/
 │   │   ├── core.py              # Pydantic config loader
@@ -95,18 +96,49 @@ credit-risk-project/
 │   │   ├── train_lrc.py         # LRCTrainer
 │   │   ├── train_rf.py          # RFTrainer
 │   │   └── train_svc.py         # SVCTrainer
+│   ├── data.py                  # Canonical train/validation split
 │   ├── ensemble.py              # CreditRiskEnsemble + MLflow pyfunc wrapper
-│   └── predict.py               # Unified prediction API
+│   ├── predict.py               # Unified prediction API
+│   └── target_semantics.py      # Label/probability conventions
 ├── tests/
 │   ├── conftest.py              # Shared fixtures (data, pipelines)
 │   ├── test_features.py         # FeatureEngineer unit + sklearn contract tests
 │   ├── test_ensemble.py         # Ensemble integration tests
-│   └── test_prediction.py       # End-to-end prediction tests
+│   ├── test_metrics.py          # Cost function + config guards
+│   ├── test_prediction.py       # End-to-end prediction tests
+│   ├── test_selection.py        # Generated ensemble config block
+│   └── test_target_semantics.py # Label/probability conventions
 ├── Dockerfile                   # Multi-stage Docker build
 ├── docker-compose.yml           # MLflow + Streamlit services
-├── main.py                      # Entry-point placeholder
+├── main.py                      # Training orchestrator (all four models)
 └── pyproject.toml               # Build metadata & dependencies
 ```
+
+### 2.1 Regenerating the README pipeline diagram
+
+`README.md` embeds `docs/pipeline-light.svg` and `docs/pipeline-dark.svg` through a
+`<picture>` element, so the diagram follows the reader's GitHub theme. Both are generated
+from `docs/pipeline.mmd`:
+
+```bash
+npx -p @mermaid-js/mermaid-cli mmdc -i docs/pipeline.mmd \
+    -o docs/pipeline-light.svg -c docs/pipeline.light.json -b transparent
+npx -p @mermaid-js/mermaid-cli mmdc -i docs/pipeline.mmd \
+    -o docs/pipeline-dark.svg  -c docs/pipeline.dark.json  -b transparent
+```
+
+Two details are load-bearing, and both fail silently:
+
+- **`htmlLabels` must stay `false`** in the two config files. With HTML labels, mermaid puts
+  every label inside a `<foreignObject>`, which GitHub strips when it serves the SVG. The
+  diagram then renders as a set of empty boxes.
+- **`mmdc` writes `width="100%"` on the root element**, which leaves the file with no
+  intrinsic size. Served through an `<img>` tag the browser cannot lay it out and shows a
+  broken image, so replace it with the pixel width and height from the `viewBox` and drop
+  the `max-width` style.
+
+Running the SVGs through `svgo` afterwards is optional. It cuts them from roughly 260 KB to
+45 KB, mostly by reducing the decimal precision of the curve paths.
 
 ---
 
@@ -167,12 +199,12 @@ The project expects **pre-processed** CSV files in `data/processed/`:
 
 | File               | Description                          |
 | ------------------ | ------------------------------------ |
-| `train_data.csv`   | Training split (≈ 850 rows)          |
-| `test_data.csv`    | Hold-out test split (≈ 150 rows)     |
+| `train_data.csv`   | Training split (841 rows)            |
+| `test_data.csv`    | Hold-out test split (159 rows)       |
 
 ### 4.1 Expected format
 
-- **Target column:** `class` — binary (0 = good, 1 = bad credit risk)
+- **Target column:** `class` — binary (1 = good credit / low risk, 0 = bad credit / high risk)
 - **Features:** Raw German Credit columns after initial renaming.
   `FeatureEngineer` (the first pipeline step) handles all domain
   transformations, category consolidation, and derived features.
@@ -225,10 +257,14 @@ between ensemble weight keys and model config keys will raise a
 | (root) | `val_size` | `150` | Hold-out validation size for threshold tuning |
 | `cost_matrix` | `false_positive` | `5` | Cost of approving a bad borrower |
 | `cost_matrix` | `false_negative` | `1` | Cost of rejecting a good borrower |
-| `ensemble` | `threshold` | `0.83` | Default approval threshold for ensemble voting |
-| `ensemble.weights` | `lrc / rfc / svc / cat` | `2.5 / 1.5 / 1.5 / 1.0` | Soft-voting weights per model |
+| `ensemble` | `threshold` | `0.66` | Approval threshold, generated by `scripts/select_ensemble.py` |
+| `ensemble.weights` | `lrc / rfc / svc / cat` | `1.0 / 2.5 / 2.0 / 1.0` | Soft-voting weights, generated by `scripts/select_ensemble.py` |
 | `mlflow` | `backend_store_uri` | `sqlite:///mlflow.db` | MLflow backend store |
 | `mlflow` | `experiment_name` | `credit_risk_ensemble` | Experiment name for ensemble runs |
+
+> The `ensemble:` block is written by `scripts/select_ensemble.py --write`. Update it by
+> re-running that script rather than editing it by hand, so the shipped values always match a
+> reproducible validation-set search.
 
 ### 5.2 Per-model configuration
 
@@ -236,7 +272,11 @@ Each model in `models:` has:
 
 - `experiment_name` / `registry_name` — MLflow experiment & registered model name
 - `cv_folds`, `bayes_n_iter`, `bayes_n_points` — Bayesian search settings
-- `use_smote` / `smote_type` — oversampling (`smote` or `svmsmote`)
+- `use_smote` / `smote_type` — oversampling (`smote` or `svmsmote`); validated at
+  config load, and `smote_type` selects the actual resampler class
+- `class_weight` / `scale_pos_weight` — imbalance handling only (`balanced` for the
+  Random Forest, the inverse class ratio for CatBoost). The cost matrix is not encoded
+  here. It is applied when tuning the decision threshold
 - Column assignment lists — which columns go to which encoder
   (e.g., `one_hot_cols`, `woe_cols`, `ordinal_cols`, `target_cols`,
   `count_cols`, `numeric_scaled_cols`, `passthrough_cols`)
@@ -302,9 +342,26 @@ for T in [LRCTrainer, RFTrainer, SVCTrainer, CatBoostTrainer]:
 
 ---
 
-## 7. Ensemble Scoring
+## 7. Ensemble Selection & Scoring
+
+These are two separate stages. Selection reads the validation set and chooses the
+configuration; scoring reads the test set and only reports.
+
+### 7.1 Selecting the configuration
 
 After all four models are trained and registered in MLflow:
+
+```bash
+uv run python scripts/select_ensemble.py           # report the candidate table only
+uv run python scripts/select_ensemble.py --write   # also write the result to model_config.yml
+```
+
+The script sweeps 256 weight combinations on the validation set, shortlists the top 15 by
+ROC AUC, tunes each candidate's decision threshold for minimum cost, and promotes the
+lowest-cost candidate. Without `--write` it changes nothing. The run is deterministic, so
+re-running it reproduces the same weights and threshold.
+
+### 7.2 Scoring on the test set
 
 ```bash
 uv run python scripts/score_ensemble.py
@@ -313,7 +370,9 @@ uv run python scripts/score_ensemble.py
 Options:
 
 ```bash
-# Override the decision threshold (default is 0.83 from config)
+# Diagnostic override of the decision threshold (default is 0.66 from config).
+# The shipped value comes from validation-set tuning, so this flag is not a way
+# to search for a better test cost.
 uv run python scripts/score_ensemble.py --threshold 0.55
 ```
 
@@ -501,7 +560,7 @@ Condition: only on main branch pushes
 ## 12. Testing
 
 ```bash
-# Run all tests (25 tests)
+# Run all tests (52 tests)
 uv run pytest tests/ -v
 
 # With coverage
@@ -519,9 +578,12 @@ automatically.
 | File | Tests | What it covers |
 | --- | --- | --- |
 | `conftest.py` | — | Shared fixtures: `raw_sample`, `X_train_small` / `y_train_small` (stratified), `mock_pipelines` (all 4 models fitted) |
-| `test_features.py` | 14 | FeatureEngineer transforms: column drops, binary flags, log transforms, category consolidation, binning, duplicate flags, immutability, sklearn contract (clone, get/set_params, repr) |
+| `test_features.py` | 17 | FeatureEngineer transforms: column drops, binary flags, log transforms, category consolidation, binning, duplicate flags, immutability, sklearn contract (clone, get/set_params, repr) |
+| `test_metrics.py` | 13 | Cost function direction (approving a bad borrower is the 5x error), average cost, trivial policy baselines, threshold handling in `evaluate_model`, and config guards asserting the class weights do not upweight the majority good class |
 | `test_ensemble.py` | 6 | Ensemble integration: probability ranges, binary predictions, weight influence, threshold effects, threshold optimisation |
 | `test_prediction.py` | 5 | End-to-end `make_prediction()` API: return structure, binary output, probability ranges, model breakdown, error handling |
+| `test_selection.py` | 7 | The generated `ensemble:` block: correct values, comments preserved, idempotent rewrite, rejects incomplete weights, output survives Pydantic validation |
+| `test_target_semantics.py` | 4 | Target encoding: `P(default) = 1 - P(good)`, class-to-label mapping, threshold-to-risk-status mapping |
 
 ### 12.2 Test fixture notes
 
@@ -616,15 +678,18 @@ The German Credit dataset documentation defines an asymmetric cost:
 
 ### 15.2 Threshold tuning
 
-During training, each model's decision threshold is tuned on a held-out
+This is the only place the cost matrix is applied. Model fitting optimises ROC AUC and
+class weights handle imbalance, so the cost asymmetry enters here, when the operating point
+is chosen. During training, each model's decision threshold is tuned on a held-out
 validation set to minimise the expected cost:
 
 ```
 expected_cost = FP × cost_FP + FN × cost_FN
 ```
 
-The ensemble threshold (default 0.83) is set in `model_config.yml` and can be
-overridden when running `score_ensemble.py --threshold <value>`.
+The ensemble's own threshold is chosen the same way, by `scripts/select_ensemble.py`,
+which writes it into `model_config.yml` (default 0.66). It can be overridden for a
+diagnostic run with `score_ensemble.py --threshold <value>`.
 
 ---
 
@@ -653,7 +718,7 @@ Three sources must agree on categorical string values:
    checks for category consolidation
 3. **`app/streamlit_app.py`** — dropdown values in the manual input form
 
-If any of these use different strings, `FeatureEngineer` won’t consolidate
+If any of these use different strings, `FeatureEngineer` won't consolidate
 categories correctly and models will receive unexpected levels.
 
 Examples of values that must match exactly:
@@ -674,10 +739,10 @@ Similarly, `FeatureEngineer` and `BaselineEngineer` must inherit
 tag-resolution machinery works correctly:
 
 ```python
-# ✅ Correct (sklearn ≥ 1.6)
+# Correct (sklearn >= 1.6)
 class FeatureEngineer(TransformerMixin, BaseEstimator): ...
 
-# ❌ Wrong — causes RuntimeError during tag resolution
+# Wrong: causes RuntimeError during tag resolution
 class FeatureEngineer(BaseEstimator, TransformerMixin): ...
 ```
 

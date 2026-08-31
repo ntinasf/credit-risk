@@ -56,9 +56,9 @@ def export_pipelines(
     for model_key, pipeline in pipelines.items():
         pkl_path = output_dir / f"{model_key}_pipeline.pkl"
         joblib.dump(pipeline, pkl_path)
-        logger.info(f"  ✓ {model_key} → {pkl_path}")
+        logger.info(f"  {model_key} -> {pkl_path}")
 
-    logger.info(f"Done — {len(pipelines)} pipelines exported to {output_dir}")
+    logger.info(f"Done. {len(pipelines)} pipelines exported to {output_dir}")
 
 
 def _parse_versions(version_args: list[str] | None) -> dict[str, str] | None:
@@ -69,10 +69,7 @@ def _parse_versions(version_args: list[str] | None) -> dict[str, str] | None:
     for item in version_args:
         key, _, ver = item.partition("=")
         if key not in config.models:
-            raise ValueError(
-                f"Unknown model key '{key}'. "
-                f"Valid keys: {list(config.models.keys())}"
-            )
+            raise ValueError(f"Unknown model key '{key}'. Valid keys: {list(config.models.keys())}")
         versions[key] = ver or "latest"
     return versions
 

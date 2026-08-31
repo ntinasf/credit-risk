@@ -24,10 +24,10 @@ jobs:
         run: uv tool install ruff
 
       - name: Lint
-        run: uv run ruff check src/ tests/ app/
+        run: uv run ruff check src/ tests/ app/ scripts/ main.py
 
       - name: Format check
-        run: uv run ruff format --check src/ tests/ app/
+        run: uv run ruff format --check src/ tests/ app/ scripts/ main.py
 
   test:
     runs-on: ubuntu-latest
@@ -46,11 +46,15 @@ jobs:
           uv run python scripts/process_data.py
           uv run python scripts/split_data.py --test-size 0.15
 
-      - name: Train lightweight models for tests
-        # The conftest.py mock_pipelines fixture fits models at test time —
-        # no pre-training needed for unit/integration tests.
-        # This step is only needed if you add tests that require registered models.
-        run: echo "No pre-training needed — test fixtures handle model fitting"
+      - name: Check the training pipeline is wired end to end
+        # Not a training run — just asserts every stage is importable and its CLI
+        # parses, so a broken pipeline fails CI rather than a release.
+        run: |
+          uv run python main.py --help > /dev/null
+          uv run python scripts/select_ensemble.py --help > /dev/null
+          uv run python scripts/score_ensemble.py --help > /dev/null
+          uv run python scripts/export_pipelines.py --help > /dev/null
+          echo "All pipeline stages wired"
 
       - name: Run tests
         run: uv run pytest tests/ -v --cov=credit_risk_model --cov-report=xml

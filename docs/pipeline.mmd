@@ -1,0 +1,36 @@
+%% Source for docs/pipeline-light.svg and docs/pipeline-dark.svg, which README.md embeds
+%% through a <picture> element so the diagram follows the reader's GitHub theme.
+%% Regeneration steps are in docs/instructions.md, section 2.1.
+%% Note: every comment line here needs text after the %% marker. A bare "%%" line
+%% makes the mermaid parser fail.
+
+flowchart TB
+    RAW(["data/raw/german.data<br/>1,000 UCI applicants"])
+    PREP["scripts/process_data.py → scripts/split_data.py<br/>map codes to labels, stratified split"]
+    RAW --> PREP
+
+    PREP --> TRAINSET(["train_data.csv · 841 rows"])
+    PREP --> TESTSET(["test_data.csv · 159 rows<br/>untouched until the last step"])
+
+    TRAINSET --> DATA["data.py · load_train_validation_split()"]
+    DATA --> FITSET(["691 fitting rows"])
+    DATA --> VALSET(["150 validation rows"])
+
+    CFG["model_config.yml<br/>per-model encoders, SMOTE flags<br/>cost matrix FP=5 / FN=1"]
+
+    TRAIN["main.py · four trainers: LRC, RFC, SVC, CatBoost<br/>FeatureEngineer → ColumnTransformer → SMOTE → estimator<br/>BayesSearchCV scored on ROC AUC"]
+    FITSET --> TRAIN
+    CFG --> TRAIN
+    TRAIN --> REG[("MLflow registry<br/>4 fitted pipelines")]
+
+    SELECT["scripts/select_ensemble.py<br/>sweep 256 weight combinations<br/>shortlist top 15 by ROC AUC, tune threshold on cost<br/>writes the winner back into model_config.yml"]
+    REG --> SELECT
+    VALSET --> SELECT
+
+    SCORE["scripts/score_ensemble.py<br/>scored once, reports only"]
+    SELECT --> SCORE
+    TESTSET --> SCORE
+
+    EXPORT["scripts/export_pipelines.py<br/>.pkl artifacts"]
+    APP["app/streamlit_app.py<br/>ensemble verdict + per-model breakdown"]
+    SELECT --> EXPORT --> APP

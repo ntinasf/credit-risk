@@ -83,15 +83,33 @@ def build_column_transformer(model_cfg: SingleModelConfig) -> ColumnTransformer:
     return ColumnTransformer(transformers=transformers, remainder="drop")
 
 
+def build_resampler(smote_type: str, random_state: int):
+    """Return the oversampler named by the model config's `smote_type`.
+
+    Keeping this a lookup rather than a hardcoded class is what makes
+    `smote_type` in model_config.yml actually drive behaviour.
+    """
+    from imblearn.over_sampling import SMOTE, SVMSMOTE
+
+    resamplers = {"smote": SMOTE, "svmsmote": SVMSMOTE}
+
+    if smote_type not in resamplers:
+        raise ValueError(f"Unknown smote_type '{smote_type}'. Valid options: {sorted(resamplers)}")
+
+    return resamplers[smote_type](random_state=random_state)
+
+
 def build_pipeline(
     estimator,
     model_cfg: SingleModelConfig,
+    random_state: int = 8,
 ) -> Pipeline | ImbPipeline:
     """Wrap estimator + preprocessing into a full sklearn/imblearn Pipeline.
 
-    If use_smote is True in the model config, returns an imblearn Pipeline
-    so that SMOTE steps can be included in the pipeline. Otherwise returns
-    a standard sklearn Pipeline.
+    If use_smote is True in the model config, returns an imblearn Pipeline so
+    that the resampling step can sit inside the pipeline, and therefore inside
+    each CV fold. Which resampler is used comes from the config's `smote_type`.
+    Otherwise returns a standard sklearn Pipeline.
 
     The FeatureEngineer is always the first step. Its `duplicate_checking`
     and `duplicate_amount` flags are set from the model config, so the
@@ -111,9 +129,8 @@ def build_pipeline(
     ]
 
     if model_cfg.use_smote:
-        from imblearn.over_sampling import SMOTE
-
-        steps.insert(2, ("smote", SMOTE(random_state=8)))
+        resampler = build_resampler(model_cfg.smote_type, random_state)
+        steps.insert(2, ("smote", resampler))
         return ImbPipeline(steps=steps)
 
     return Pipeline(steps=steps)
@@ -149,7 +166,7 @@ def build_catboost_input(
 def build_catboost_pipeline(
     model_cfg: SingleModelConfig,
     random_state: int = 8,
-    scale_pos_weight: float = 5.0,
+    scale_pos_weight: float = 1.0,  # neutral; cost direction comes from config
 ) -> Pipeline:
     """Build the full pipeline for CatBoost, including cat_features injection."""
     from credit_risk_model.processing.catboost_wrapper import CatBoostSklearnWrapper

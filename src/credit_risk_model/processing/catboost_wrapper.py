@@ -28,7 +28,7 @@ class CatBoostSklearnWrapper(ClassifierMixin, BaseEstimator):
         iterations: int = 500,
         l2_leaf_reg: float = 3.0,
         border_count: int = 128,
-        scale_pos_weight: float = 5.0,
+        scale_pos_weight: float = 1.0,  # neutral; cost direction comes from config
         random_seed: int = 8,
         verbose: int = 0,
         cat_features: list[int] | None = None,

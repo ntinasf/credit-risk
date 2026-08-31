@@ -72,7 +72,11 @@ class BaseModelTrainer(ABC):
         CatBoostTrainer overrides this to use build_catboost_pipeline() which
         passes columns through without encoding and injects cat_features indices.
         """
-        return build_pipeline(estimator, self.model_cfg)
+        return build_pipeline(
+            estimator,
+            self.model_cfg,
+            random_state=self.app_config.random_state,
+        )
 
     # ── Shared training logic ─────────────────────────────────────────────
 
@@ -279,11 +283,23 @@ class BaseModelTrainer(ABC):
                 "model_family": self.get_model_key().upper(),
                 "preprocessing": "FeatureEngineer+Encoders",
                 "tuning_method": "BayesSearchCV",
-                "imbalance_handling": (
-                    self.model_cfg.smote_type.upper() if self.model_cfg.use_smote else "cost_weight"
-                ),
+                "imbalance_handling": self._imbalance_strategy(),
             }
         )
+
+    def _imbalance_strategy(self) -> str:
+        """Describe how this model handles class imbalance, for MLflow filtering.
+
+        Note this handles imbalance. The cost matrix is applied only when
+        tuning the decision threshold.
+        """
+        if self.model_cfg.use_smote:
+            return self.model_cfg.smote_type.upper()
+        if self.model_cfg.class_weight is not None:
+            return f"class_weight={self.model_cfg.class_weight}"
+        if self.model_cfg.scale_pos_weight is not None:
+            return f"scale_pos_weight={self.model_cfg.scale_pos_weight}"
+        return "none"
 
     def _run_name(self, tune: bool) -> str:
         key = self.get_model_key().upper()

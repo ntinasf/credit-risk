@@ -478,8 +478,8 @@ def main():
     with st.expander("ℹ️ About the Model's Cost-Sensitive Approach"):
         st.markdown(
             """
-            This model is optimised for **minimising business cost**,
-            not just accuracy.
+            This model is optimised for **minimising business cost**
+            rather than accuracy.
 
             According to the
             [German Credit
@@ -493,9 +493,9 @@ def main():
 
             **What this means:** It's 5× more costly to approve a loan
             for someone who will default than to reject a creditworthy
-            applicant. The model is intentionally **conservative** —
-            it may classify some good-risk applicants
-            as bad-risk to avoid the larger cost of defaults.
+            applicant. The model is therefore **conservative**: it may
+            classify some good-risk applicants as bad-risk to avoid the
+            larger cost of defaults.
             """
         )
 

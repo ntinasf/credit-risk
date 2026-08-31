@@ -53,7 +53,7 @@
   .file-tree { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85rem; background: #0d1117; padding: 1rem 1.5rem; border-radius: 6px; line-height: 1.8; white-space: pre; overflow-x: auto; }
   .ft-dir { color: var(--accent); }
   .ft-file { color: var(--text); }
-  .ft-new { color: var(--green); font-weight: 600; }
+  .ft-file { color: var(--green); font-weight: 600; }
   .ft-desc { color: var(--text-muted); }
   .ft-empty { color: var(--text-muted); font-style: italic; }
 
@@ -94,19 +94,18 @@
 </head>
 <body>
 
-<h1>🏗️ Credit Risk Project — Architecture</h1>
+<h1>Credit Risk Project — Architecture</h1>
 <p class="subtitle">Interactive codebase map · German Credit Dataset · 4-Model Voting Ensemble</p>
-<p class="updated">Last updated: April 4, 2026 (v6 — test suite passing, sklearn compat fixes, conftest stratified sampling)</p>
+<p class="updated">System overview: modules, dependencies, and the training-to-serving flow.</p>
 
 <!-- ─── TAB NAV ─────────────────────────────────────────── -->
 <div class="tabs">
-  <div class="tab active" onclick="showTab('flow')">📊 Data Flow</div>
-  <div class="tab" onclick="showTab('deps')">🔗 Dependencies</div>
-  <div class="tab" onclick="showTab('classes')">🧬 Classes</div>
-  <div class="tab" onclick="showTab('tree')">📁 File Tree</div>
-  <div class="tab" onclick="showTab('modules')">📦 Modules</div>
-  <div class="tab" onclick="showTab('bugs')">🐛 Bugs</div>
-  <div class="tab" onclick="showTab('issues')">⚠️ Issues</div>
+  <div class="tab active" onclick="showTab('flow')">Data Flow</div>
+  <div class="tab" onclick="showTab('deps')">Dependencies</div>
+  <div class="tab" onclick="showTab('classes')">Classes</div>
+  <div class="tab" onclick="showTab('tree')">File Tree</div>
+  <div class="tab" onclick="showTab('modules')">Modules</div>
+  <div class="tab" onclick="showTab('issues')">Design Notes</div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════ -->
@@ -116,25 +115,25 @@
 <h3>End-to-End Pipeline (Training → Ensemble → Serving)</h3>
 <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:1rem;">
   Shows the full lifecycle: config → pipeline assembly → individual model training →
-  ensemble scoring → prediction API → Streamlit app.
+  ensemble selection on validation → scoring once on test → prediction API → Streamlit app.
 </p>
 <div class="diagram-container">
 <pre class="mermaid">
 flowchart TB
-  subgraph DATAPREP["📂 Data Preparation"]
+  subgraph DATAPREP["Data Preparation"]
     RAW["data/raw/german.data\n─────────────────\nOriginal UCI dataset\n20 coded attributes (A11, A12…)"]
     PROC["scripts/process_data.py\n─────────────────\n• Read space-delimited file\n• Map codes → human-readable labels\n• Convert numeric types\n• Save german_credit.csv"]
     SPLIT["scripts/split_data.py\n─────────────────\n• Stratified hash-based split\n• Deterministic (no seed needed)\n• → train_data.csv + test_data.csv"]
     RAW -->|"parse &amp; map"| PROC -->|"stratify"| SPLIT
   end
 
-  subgraph CONFIG["⚙️ Configuration Layer"]
+  subgraph CONFIG["Configuration Layer"]
     YAML["model_config.yml\n─────────────────\n• column→encoder mappings\n• SMOTE flags per model\n• BayesSearch params\n• cost matrix 5:1\n• ensemble weights &amp; threshold"]
     CORE["config/core.py\n─────────────────\nAppConfig · SingleModelConfig\nCostMatrix · EnsembleConfig\nconfig singleton"]
     YAML -->|"yaml.safe_load\n+ Pydantic validation"| CORE
   end
 
-  subgraph PIPELINE["🔧 Pipeline Assembly (preprocessors.py)"]
+  subgraph PIPELINE["Pipeline Assembly (preprocessors.py)"]
     direction TB
     FE["FeatureEngineer\n─────────────────\n• Drop uninformative cols\n• Binary: no_checking\n• Ratios, logs, polynomials\n• Category consolidation\n• Quantile binning"]
     CT["ColumnTransformer\n─────────────────\nOneHot · WOE · Target\nCount · Ordinal · Scaler\nPassthrough"]
@@ -143,7 +142,7 @@ flowchart TB
     FE --> CT --> SMOTE --> EST
   end
 
-  subgraph TRAINING["🎯 Training (BaseModelTrainer.train)"]
+  subgraph TRAINING["Training (BaseModelTrainer.train)"]
     direction TB
     BAYES["BayesSearchCV\n─────────────────\nn_iter from config\nscoring: roc_auc"]
     THRESH["Threshold Tuning\n─────────────────\nSweep 0.01→0.99\nMinimize cost on X_val"]
@@ -152,18 +151,19 @@ flowchart TB
     BAYES --> THRESH --> EVAL --> PLOTS
   end
 
-  subgraph ENSEMBLE["🗳️ Ensemble Layer (NEW)"]
+  subgraph ENSEMBLE["Ensemble Layer"]
     direction TB
+    SELECT["scripts/select_ensemble.py\n─────────────────\nSweep 256 weight combos\nShortlist top 15 by ROC AUC\nTune threshold on cost\n→ writes model_config.yml"]
     ENS["CreditRiskEnsemble\n─────────────────\nWeighted soft voting\n4 pipelines combined\nCost-optimized threshold"]
     PYFUNC["CreditRiskPyfunc\n─────────────────\nMLflow pyfunc wrapper\nStandard predict() API"]
-    ENS --> PYFUNC
+    SELECT -->|"weights + threshold\n(validation set)"| ENS --> PYFUNC
   end
 
-  subgraph SERVING["🚀 Serving Layer (NEW)"]
+  subgraph SERVING["Serving Layer"]
     direction TB
     PREDICT["predict.py\n─────────────────\nload from Registry or pkl\nmake_prediction() API"]
-    SCORE["scripts/score_ensemble.py\n─────────────────\nEvaluate on test set\nLog to MLflow\nRegister ensemble model"]
-    APP["app/streamlit_app.py\n─────────────────\n🎲 Random Samples tab\n✏️ Manual Input tab\nPer-model breakdown bars\nCost-sensitive explainer"]
+    SCORE["scripts/score_ensemble.py\n─────────────────\nScore once on test set\nLog to MLflow\nRegister ensemble model"]
+    APP["app/streamlit_app.py\n─────────────────\nRandom Samples tab\nManual Input tab\nPer-model breakdown bars\nCost-sensitive explainer"]
     PREDICT --> APP
     PREDICT --> SCORE
   end
@@ -193,7 +193,7 @@ flowchart TB
 <div id="deps" class="tab-content">
 <h3>Import Graph</h3>
 <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:1rem;">
-  Every arrow means "imports from". Green nodes = new since last review.
+  Every arrow means "imports from".
 </p>
 <div class="diagram-container">
 <pre class="mermaid">
@@ -222,7 +222,7 @@ flowchart LR
     cat["train_catboost.py — CatBoostTrainer"]
   end
 
-  subgraph newlayer["NEW: ensemble + serving"]
+  subgraph newlayer["Ensemble + serving"]
     ens["ensemble.py\n─────────\nCreditRiskEnsemble\nCreditRiskPyfunc"]
     pred["predict.py\n─────────\nload_pipelines_from_registry()\nload_pipelines_from_dir()\nmake_prediction()"]
     score["scripts/score_ensemble.py\n─────────\nscore_ensemble()"]
@@ -396,11 +396,8 @@ classDiagram
 <!-- ═══════════════════════════════════════════════════════ -->
 <div id="tree" class="tab-content">
 <h3>Project Structure</h3>
-<p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:0.5rem;">
-  <span style="color:var(--green);">●</span> Green = new since last review
-</p>
 <div class="file-tree"><span class="ft-dir">credit-risk-project/</span>
-├── <span class="ft-file">main.py</span>                          <span class="ft-desc">— entry point (placeholder)</span>
+├── <span class="ft-file">main.py</span>                          <span class="ft-desc">— training orchestrator (all four models)</span>
 ├── <span class="ft-file">pyproject.toml</span>                   <span class="ft-desc">— project metadata &amp; dependencies</span>
 ├── <span class="ft-file">README.md</span>
 ├── <span class="ft-file">uv.lock</span>                          <span class="ft-desc">— uv dependency lockfile</span>
@@ -410,8 +407,10 @@ classDiagram
 │
 ├── <span class="ft-dir">src/credit_risk_model/</span>
 │   ├── <span class="ft-file">__init__.py</span>
-│   ├── <span class="ft-new">ensemble.py</span>              <span class="ft-desc">— CreditRiskEnsemble + CreditRiskPyfunc (NEW)</span>
-│   ├── <span class="ft-new">predict.py</span>               <span class="ft-desc">— load models + make_prediction() API (NEW)</span>
+│   ├── <span class="ft-file">data.py</span>                  <span class="ft-desc">— canonical train/validation split</span>
+│   ├── <span class="ft-file">ensemble.py</span>              <span class="ft-desc">— CreditRiskEnsemble + CreditRiskPyfunc</span>
+│   ├── <span class="ft-file">predict.py</span>               <span class="ft-desc">— load models + make_prediction() API</span>
+│   ├── <span class="ft-file">target_semantics.py</span>      <span class="ft-desc">— label and probability conventions</span>
 │   │
 │   ├── <span class="ft-dir">config/</span>
 │   │   ├── <span class="ft-file">core.py</span>              <span class="ft-desc">— Pydantic models, load_config(), config singleton</span>
@@ -434,13 +433,14 @@ classDiagram
 │       └── <span class="ft-file">train_catboost.py</span>    <span class="ft-desc">— CatBoostTrainer</span>
 │
 ├── <span class="ft-dir">scripts/</span>
-│   ├── <span class="ft-new">process_data.py</span>      <span class="ft-desc">— parse raw german.data → german_credit.csv (NEW)</span>
-│   ├── <span class="ft-new">split_data.py</span>        <span class="ft-desc">— stratified hash split → train + test CSVs (NEW)</span>
-│   ├── <span class="ft-new">export_pipelines.py</span>      <span class="ft-desc">— export MLflow models → pickle files (NEW)</span>
-│   └── <span class="ft-new">score_ensemble.py</span>        <span class="ft-desc">— evaluate ensemble on test set, log to MLflow (NEW)</span>
+│   ├── <span class="ft-file">process_data.py</span>      <span class="ft-desc">— parse raw german.data → german_credit.csv</span>
+│   ├── <span class="ft-file">split_data.py</span>        <span class="ft-desc">— stratified hash split → train + test CSVs</span>
+│   ├── <span class="ft-file">export_pipelines.py</span>      <span class="ft-desc">— export MLflow models → pickle files</span>
+│   ├── <span class="ft-file">select_ensemble.py</span>       <span class="ft-desc">— choose weights + threshold on validation</span>
+│   └── <span class="ft-file">score_ensemble.py</span>        <span class="ft-desc">— score that configuration once, on test</span>
 │
 ├── <span class="ft-dir">app/</span>
-│   ├── <span class="ft-new">streamlit_app.py</span>         <span class="ft-desc">— Streamlit UI — complete (Random Samples + Manual Input)</span>
+│   ├── <span class="ft-file">streamlit_app.py</span>         <span class="ft-desc">— Streamlit UI — complete (Random Samples + Manual Input)</span>
 │   ├── <span class="ft-file">requirements.txt</span>         <span class="ft-desc">— app dependencies (for Docker)</span>
 │   ├── <span class="ft-dir">models/</span>                  <span class="ft-desc">— exported .pkl files (.gitkeep)</span>
 │   └── <span class="ft-dir">data/</span>
@@ -452,12 +452,15 @@ classDiagram
 ├── <span class="ft-empty">notebooks/</span>
 ├── <span class="ft-dir">tests/</span>
 │   ├── <span class="ft-file">conftest.py</span>              <span class="ft-desc">— shared fixtures (raw_sample, X/y_train, mock_pipelines)</span>
-│   ├── <span class="ft-new">test_features.py</span>         <span class="ft-desc">— FeatureEngineer unit + sklearn contract (14 tests)</span>
-│   ├── <span class="ft-new">test_ensemble.py</span>         <span class="ft-desc">— ensemble integration tests (6 tests)</span>
-│   └── <span class="ft-new">test_prediction.py</span>       <span class="ft-desc">— end-to-end prediction API (5 tests)</span>
+│   ├── <span class="ft-file">test_features.py</span>         <span class="ft-desc">— FeatureEngineer unit + sklearn contract (17 tests)</span>
+│   ├── <span class="ft-file">test_ensemble.py</span>         <span class="ft-desc">— ensemble integration tests (6 tests)</span>
+│   ├── <span class="ft-file">test_metrics.py</span>          <span class="ft-desc">— cost function + config guards (13 tests)</span>
+│   ├── <span class="ft-file">test_prediction.py</span>       <span class="ft-desc">— end-to-end prediction API (5 tests)</span>
+│   ├── <span class="ft-file">test_selection.py</span>        <span class="ft-desc">— generated ensemble config block (7 tests)</span>
+│   └── <span class="ft-file">test_target_semantics.py</span> <span class="ft-desc">— label conventions (4 tests)</span>
 └── <span class="ft-dir">docs/</span>
     ├── <span class="ft-file">architecture.html</span>        <span class="ft-desc">— this file</span>
-    └── <span class="ft-new">instructions.md</span>          <span class="ft-desc">— comprehensive setup &amp; usage guide (NEW)</span></div>
+    └── <span class="ft-file">instructions.md</span>          <span class="ft-desc">— comprehensive setup &amp; usage guide</span></div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════ -->
@@ -484,8 +487,8 @@ classDiagram
     <span class="tag tag-ok">4 model configs</span>
     <span class="tag tag-ok">ensemble weights</span>
     <span class="tag tag-ok">cost matrix</span>
-    <span class="tag tag-ok">✅ YAML typo fixed</span>
-    <span class="tag tag-ok">✅ mlflow key fixed</span>
+    <span class="tag tag-ok">YAML typo fixed</span>
+    <span class="tag tag-ok">mlflow key fixed</span>
   </div>
 
   <div class="module-card">
@@ -493,7 +496,7 @@ classDiagram
     <p>Domain-specific feature engineering for German Credit. ~10 derived features, category consolidation, binning. First pipeline step. Inherits <code>TransformerMixin</code> before <code>BaseEstimator</code> (required for sklearn ≥ 1.6 tag resolution).</p>
     <span class="tag tag-class">FeatureEngineer</span>
     <span class="tag tag-class">BaselineEngineer</span>
-    <span class="tag tag-ok">✅ MRO order fixed</span>
+    <span class="tag tag-ok">MRO order fixed</span>
   </div>
 
   <div class="module-card">
@@ -503,14 +506,14 @@ classDiagram
     <span class="tag tag-func">build_pipeline()</span>
     <span class="tag tag-func">build_catboost_input()</span>
     <span class="tag tag-func">build_catboost_pipeline()</span>
-    <span class="tag tag-ok">✅ unused import removed</span>
+    <span class="tag tag-ok">unused import removed</span>
   </div>
 
   <div class="module-card">
     <h4>processing/catboost_wrapper.py</h4>
     <p>Makes CatBoost fully sklearn-compatible for clone(), BayesSearchCV, predict_proba(). Uses <code>super().__sklearn_tags__()</code> for sklearn ≥ 1.8 compat.</p>
     <span class="tag tag-class">CatBoostSklearnWrapper</span>
-    <span class="tag tag-ok">✅ __sklearn_tags__ fixed</span>
+    <span class="tag tag-ok">__sklearn_tags__ fixed</span>
   </div>
 
   <div class="module-card">
@@ -538,8 +541,8 @@ classDiagram
     <span class="tag tag-func">_run_bayesian_search()</span>
     <span class="tag tag-func">_tune_threshold()</span>
     <span class="tag tag-func">_log_evaluation()</span>
-    <span class="tag tag-ok">✅ unused imports removed</span>
-    <span class="tag tag-ok">✅ CatBoost hook added</span>
+    <span class="tag tag-ok">unused imports removed</span>
+    <span class="tag tag-ok">CatBoost hook added</span>
   </div>
 
   <div class="module-card">
@@ -551,9 +554,9 @@ classDiagram
 
   <div class="module-card">
     <h4>training/train_rf.py</h4>
-    <p>Random Forest. Cost-sensitive via class_weight={0:1, 1:5}. Duplicate checking cols.</p>
+    <p>Random Forest. Imbalance handled via <code>class_weight="balanced"</code>. Duplicate checking cols.</p>
     <span class="tag tag-class">RFTrainer</span>
-    <span class="tag tag-ok">cost-sensitive</span>
+    <span class="tag tag-ok">balanced weights</span>
   </div>
 
   <div class="module-card">
@@ -565,17 +568,17 @@ classDiagram
 
   <div class="module-card">
     <h4>training/train_catboost.py</h4>
-    <p>CatBoost. Overrides <code>_build_pipeline()</code> to call <code>build_catboost_pipeline()</code> for native categorical handling. scale_pos_weight=5.</p>
+    <p>CatBoost. Overrides <code>_build_pipeline()</code> to call <code>build_catboost_pipeline()</code> for native categorical handling. <code>scale_pos_weight=0.42</code> (inverse class ratio).</p>
     <span class="tag tag-class">CatBoostTrainer</span>
     <span class="tag tag-func">_build_pipeline() override</span>
     <span class="tag tag-ok">native categoricals</span>
-    <span class="tag tag-ok">✅ pipeline builder fixed</span>
+    <span class="tag tag-ok">pipeline builder fixed</span>
   </div>
 
-  <!-- NEW MODULES -->
+  <!-- SERVING, SCRIPTS & APP -->
 
-  <div class="module-card new-card">
-    <h4>ensemble.py <span class="tag tag-new">NEW</span></h4>
+  <div class="module-card">
+    <h4>ensemble.py</h4>
     <p>Weighted soft-voting ensemble of 4 pipelines. Cost-optimized threshold. MLflow pyfunc wrapper for deployment.</p>
     <span class="tag tag-class">CreditRiskEnsemble</span>
     <span class="tag tag-class">CreditRiskPyfunc</span>
@@ -583,44 +586,64 @@ classDiagram
     <span class="tag tag-func">predict_with_breakdown()</span>
     <span class="tag tag-func">optimize_threshold()</span>
     <span class="tag tag-func">evaluate()</span>
-    <span class="tag tag-ok">✅ evaluate() fixed (inline metrics)</span>
+    <span class="tag tag-ok">evaluate() fixed (inline metrics)</span>
   </div>
 
-  <div class="module-card new-card">
-    <h4>predict.py <span class="tag tag-new">NEW</span></h4>
+  <div class="module-card">
+    <h4>predict.py</h4>
     <p>Public prediction API. Loads pipelines from MLflow registry or pickle files. Single <code>make_prediction()</code> entry point.</p>
     <span class="tag tag-func">load_pipelines_from_registry()</span>
     <span class="tag tag-func">load_pipelines_from_dir()</span>
     <span class="tag tag-func">make_prediction()</span>
   </div>
 
-  <div class="module-card new-card">
-    <h4>scripts/score_ensemble.py <span class="tag tag-new">NEW</span></h4>
-    <p>Standalone script to evaluate ensemble on test set, log metrics/artifacts to MLflow, register pyfunc model.</p>
-    <span class="tag tag-func">score_ensemble()</span>
-    <span class="tag tag-ok">✅ __main__ guard added</span>
-    <span class="tag tag-ok">✅ mlflow key fixed</span>
+  <div class="module-card">
+    <h4>src/credit_risk_model/data.py</h4>
+    <p>The canonical train/validation split. Every stage calls in here so the partition cannot drift between training, selection, and the notebook.</p>
+    <span class="tag tag-func">load_training_frame()</span>
+    <span class="tag tag-func">load_train_validation_split()</span>
   </div>
 
-  <div class="module-card new-card">
-    <h4>scripts/export_pipelines.py <span class="tag tag-new">NEW</span></h4>
+  <div class="module-card">
+    <h4>src/credit_risk_model/target_semantics.py</h4>
+    <p>One place for the label conventions: class 1 is good credit, and default risk is 1 - P(class = 1).</p>
+    <span class="tag tag-ok">class 1 = good</span>
+  </div>
+
+  <div class="module-card">
+    <h4>scripts/select_ensemble.py</h4>
+    <p>The authoritative selection step. Sweeps 256 weight combinations on the validation set, shortlists the top 15 by ROC AUC, tunes each candidate's threshold for minimum cost, and with <code>--write</code> writes the winner into <code>model_config.yml</code>.</p>
+    <span class="tag tag-func">sweep_weights()</span>
+    <span class="tag tag-func">write_config()</span>
+    <span class="tag tag-ok">validation set only</span>
+  </div>
+
+  <div class="module-card">
+    <h4>scripts/score_ensemble.py</h4>
+    <p>Scores the selected configuration once on the test set, logs metrics and artifacts to MLflow, and registers the pyfunc model. Reports only; it makes no choices.</p>
+    <span class="tag tag-func">score_ensemble()</span>
+    <span class="tag tag-ok">test set, once</span>
+  </div>
+
+  <div class="module-card">
+    <h4>scripts/export_pipelines.py</h4>
     <p>Exports fitted pipelines from MLflow registry to <code>.pkl</code> files in <code>app/models/</code>. Supports version selection. Used to bridge MLflow → Streamlit/Docker.</p>
     <span class="tag tag-func">export_pipelines()</span>
     <span class="tag tag-ok">argparse CLI</span>
     <span class="tag tag-ok">--output-dir, --versions</span>
   </div>
 
-  <div class="module-card new-card">
-    <h4>scripts/process_data.py <span class="tag tag-new">NEW</span></h4>
+  <div class="module-card">
+    <h4>scripts/process_data.py</h4>
     <p>Reads raw <code>data/raw/german.data</code> (space-delimited, coded attributes). Maps UCI codes (A11, A12…) to human-readable labels matching <code>FeatureEngineer</code> expectations. Outputs <code>german_credit.csv</code>.</p>
     <span class="tag tag-func">get_mappings()</span>
     <span class="tag tag-func">create_german_credit_csv()</span>
     <span class="tag tag-ok">21 columns mapped</span>
-    <span class="tag tag-ok">✅ labels match FeatureEngineer</span>
+    <span class="tag tag-ok">labels match FeatureEngineer</span>
   </div>
 
-  <div class="module-card new-card">
-    <h4>scripts/split_data.py <span class="tag tag-new">NEW</span></h4>
+  <div class="module-card">
+    <h4>scripts/split_data.py</h4>
     <p>Stratified hash-based train/test split. Deterministic without random seeds — same row always lands in same split. Outputs <code>train_data.csv</code> + <code>test_data.csv</code>.</p>
     <span class="tag tag-func">hash_split()</span>
     <span class="tag tag-func">validate_split()</span>
@@ -628,8 +651,8 @@ classDiagram
     <span class="tag tag-ok">--test-size, --input-path</span>
   </div>
 
-  <div class="module-card new-card">
-    <h4>app/streamlit_app.py <span class="tag tag-new">UPDATED</span></h4>
+  <div class="module-card">
+    <h4>app/streamlit_app.py</h4>
     <p>Complete Streamlit UI. Feature dicts (14 categorical + 7 numeric) with labels &amp; help tooltips. Cached pipeline &amp; data loaders. Two tabs: Random Samples (with true label display) and Manual Input (full form). Per-model progress bars. Cost-sensitive model explainer.</p>
     <span class="tag tag-func">get_pipelines() (cached)</span>
     <span class="tag tag-func">load_sample_data() (cached)</span>
@@ -640,291 +663,16 @@ classDiagram
     <span class="tag tag-ok">NUMERIC_FEATURES (7)</span>
     <span class="tag tag-ok">FEATURE_LABELS + FEATURE_HELP</span>
     <span class="tag tag-ok">MODEL_LABELS</span>
-    <span class="tag tag-ok">✅ All bugs fixed</span>
+    <span class="tag tag-ok">All bugs fixed</span>
   </div>
 
 </div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════ -->
-<!-- TAB 6: BUGS                                            -->
-<!-- ═══════════════════════════════════════════════════════ -->
-<div id="bugs" class="tab-content">
-<h3>🐛 Bugs Found (code audits — March 31 + April 4, 2026) · <span style="color:var(--green);">All 17 fixed ✅</span></h3>
-<p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:1rem;">
-  All bugs have been resolved as of April 4, 2026 (v6). Bugs 12–14 found in the second deep audit. Bugs 15–17 found during test validation.
-  <span style="color:var(--green);">●</span> = Fixed.
-</p>
-
-<table>
-  <thead>
-    <tr><th>#</th><th>Status</th><th>Location</th><th>Bug</th><th>Resolution</th></tr>
-  </thead>
-  <tbody>
-
-    <tr>
-      <td>1</td>
-      <td><span style="color:var(--green); font-weight:600;">✅ Fixed</span></td>
-      <td><code>model_config.yml</code><br>cat → numeric_cols</td>
-      <td>
-        <strong>YAML typo: missing space after dash.</strong><br>
-        <code>-credit_log</code> parsed as <code>"-credit_log"</code> instead of list item.
-      </td>
-      <td>
-        <div class="bug-fix">Added space: <code>- credit_log</code></div>
-      </td>
-    </tr>
-
-    <tr>
-      <td>2</td>
-      <td><span style="color:var(--green); font-weight:600;">✅ Fixed</span></td>
-      <td><code>model_config.yml</code><br>+ <code>score_ensemble.py</code></td>
-      <td>
-        <strong>MLflow config key mismatch.</strong><br>
-        YAML key <code>experiment_name</code> vs code expected <code>ensemble_experiment_name</code>.
-      </td>
-      <td>
-        <div class="bug-fix">Added <code>ensemble_experiment_name</code> key to YAML.</div>
-      </td>
-    </tr>
-
-    <tr>
-      <td>3</td>
-      <td><span style="color:var(--green); font-weight:600;">✅ Fixed</span></td>
-      <td><code>ensemble.py</code><br>evaluate()</td>
-      <td>
-        <strong>1D vs 2D array mismatch.</strong><br>
-        <code>evaluate()</code> passed <code>self</code> to <code>evaluate_model()</code> which expected 2D <code>predict_proba()</code>.
-      </td>
-      <td>
-        <div class="bug-fix">Rewrote <code>evaluate()</code> to compute metrics inline instead of delegating to <code>evaluate_model()</code>.</div>
-      </td>
-    </tr>
-
-    <tr>
-      <td>4</td>
-      <td><span style="color:var(--green); font-weight:600;">✅ Fixed</span></td>
-      <td><code>app/streamlit_app.py</code></td>
-      <td>
-        <strong>Undefined variable / skeleton app.</strong><br>
-        <code>applicant_data</code> was undefined. App was just a stub.
-      </td>
-      <td>
-        <div class="bug-fix">Complete rewrite: merged two partial versions into full app with feature dicts, manual input form, random sample tabs, prediction display.</div>
-      </td>
-    </tr>
-
-    <tr>
-      <td>5</td>
-      <td><span style="color:var(--green); font-weight:600;">✅ Fixed</span></td>
-      <td><code>score_ensemble.py</code></td>
-      <td>
-        <strong>Missing <code>__main__</code> guard.</strong><br>
-        <code>score_ensemble()</code> defined but never called.
-      </td>
-      <td>
-        <div class="bug-fix">Added <code>if __name__ == "__main__"</code> block with argparse.</div>
-      </td>
-    </tr>
-
-    <tr>
-      <td>6</td>
-      <td><span style="color:var(--green); font-weight:600;">✅ Fixed</span></td>
-      <td><code>base.py</code><br>train()</td>
-      <td>
-        <strong>Threshold not logged for baseline runs.</strong><br>
-        <code>log_metric</code> was inside <code>if tune_threshold</code> block.
-      </td>
-      <td>
-        <div class="bug-fix">Moved <code>log_metric("tuned_decision_threshold", ...)</code> outside the if block.</div>
-      </td>
-    </tr>
-
-    <tr>
-      <td>7</td>
-      <td><span style="color:var(--green); font-weight:600;">✅ Fixed</span></td>
-      <td><code>base.py</code><br>_run_bayesian_search()</td>
-      <td>
-        <strong>Dead variable.</strong><br>
-        <code>cost_scorer = cost_scorer_fn</code> assigned but never used.
-      </td>
-      <td>
-        <div class="bug-fix">Removed the dead assignment.</div>
-      </td>
-    </tr>
-
-    <tr>
-      <td>8</td>
-      <td><span style="color:var(--green); font-weight:600;">✅ Fixed</span></td>
-      <td><code>base.py</code><br>_tune_threshold()</td>
-      <td>
-        <strong>numpy float not cast to Python float.</strong><br>
-        Could cause MLflow / JSON serialization issues.
-      </td>
-      <td>
-        <div class="bug-fix">Added <code>return float(best_threshold)</code>.</div>
-      </td>
-    </tr>
-
-    <tr>
-      <td>9</td>
-      <td><span style="color:var(--green); font-weight:600;">✅ Fixed</span></td>
-      <td><code>base.py</code></td>
-      <td>Unused imports: <code>CalibratedClassifierCV</code>, <code>StratifiedShuffleSplit</code>, <code>Path</code>.</td>
-      <td>Removed all three unused imports.</td>
-    </tr>
-
-    <tr>
-      <td>10</td>
-      <td><span style="color:var(--green); font-weight:600;">✅ Fixed</span></td>
-      <td><code>preprocessors.py</code></td>
-      <td>Unused import of <code>CatBoostSklearnWrapper</code> inside <code>build_pipeline()</code>.</td>
-      <td>Removed the unused import.</td>
-    </tr>
-
-    <tr>
-      <td>11</td>
-      <td><span style="color:var(--green); font-weight:600;">✅ Fixed</span></td>
-      <td><code>train_lrc.py</code></td>
-      <td>Unused <code>config</code> import (base class handles config).</td>
-      <td>Removed the unused import.</td>
-    </tr>
-
-    <tr>
-      <td>12</td>
-      <td><span style="color:var(--green); font-weight:600;">✅ Fixed</span></td>
-      <td><code>base.py</code> + <code>train_catboost.py</code></td>
-      <td>
-        <strong>CatBoost used the wrong pipeline builder (CRITICAL).</strong><br>
-        <code>CatBoostTrainer</code> inherited generic <code>build_pipeline()</code> which doesn't recognise <code>numeric_cols</code>/<code>categorical_cols</code>. CatBoost trained on only 4 passthrough columns, losing native categorical handling.
-      </td>
-      <td>
-        <div class="bug-fix">Added <code>_build_pipeline()</code> hook method to <code>BaseModelTrainer</code>. <code>CatBoostTrainer</code> overrides it to call <code>build_catboost_pipeline()</code>.</div>
-      </td>
-    </tr>
-
-    <tr>
-      <td>13</td>
-      <td><span style="color:var(--green); font-weight:600;">✅ Fixed</span></td>
-      <td><code>app/streamlit_app.py</code></td>
-      <td>
-        <strong>savings_account_bonds dropdown values didn't match FeatureEngineer.</strong><br>
-        App used <code>"100 &lt;= ... &lt; 500 DM"</code> but FeatureEngineer checks for <code>"100 - 500 DM"</code>.
-      </td>
-      <td>
-        <div class="bug-fix">Updated dropdown values: <code>"100 - 500 DM"</code>, <code>"500 - 1000 DM"</code>.</div>
-      </td>
-    </tr>
-
-    <tr>
-      <td>14</td>
-      <td><span style="color:var(--green); font-weight:600;">✅ Fixed</span></td>
-      <td><code>app/streamlit_app.py</code></td>
-      <td>
-        <strong>credit_history dropdown values didn't match FeatureEngineer.</strong><br>
-        App used <code>"no credits/all paid duly"</code> but FeatureEngineer checks for <code>"no credits taken/all credits paid back duly"</code>.
-      </td>
-      <td>
-        <div class="bug-fix">Updated dropdown values to match exact strings in FeatureEngineer's consolidation sets.</div>
-      </td>
-    </tr>
-
-    <tr>
-      <td>15</td>
-      <td><span style="color:var(--green); font-weight:600;">✅ Fixed</span></td>
-      <td><code>catboost_wrapper.py</code><br>__sklearn_tags__()</td>
-      <td>
-        <strong><code>Tags()</code> called with no args — breaks on sklearn ≥ 1.8.</strong><br>
-        sklearn 1.8 requires <code>estimator_type</code> and <code>target_tags</code> as positional arguments to <code>Tags.__init__()</code>.
-      </td>
-      <td>
-        <div class="bug-fix">Changed to <code>super().__sklearn_tags__()</code> which inherits proper tags from <code>BaseEstimator</code>/<code>ClassifierMixin</code>.</div>
-      </td>
-    </tr>
-
-    <tr>
-      <td>16</td>
-      <td><span style="color:var(--green); font-weight:600;">✅ Fixed</span></td>
-      <td><code>tests/conftest.py</code><br>X_train_small / y_train_small</td>
-      <td>
-        <strong>Test fixture had single-class target — WOE encoder crashed.</strong><br>
-        <code>.head(200)</code> took first 200 rows, but hash-based split grouped all class=1 rows at the top. WOE encoder requires both classes.
-      </td>
-      <td>
-        <div class="bug-fix">Replaced <code>.head(200)</code> with stratified sampling: <code>pd.concat</code> of 100 rows per class.</div>
-      </td>
-    </tr>
-
-    <tr>
-      <td>17</td>
-      <td><span style="color:var(--green); font-weight:600;">✅ Fixed</span></td>
-      <td><code>processing/features.py</code><br>+ <code>tests/test_features.py</code></td>
-      <td>
-        <strong>MRO order broke sklearn tag resolution; test savings label mismatch.</strong><br>
-        <code>FeatureEngineer(BaseEstimator, TransformerMixin)</code> caused <code>RuntimeError</code> in sklearn ≥ 1.6. Also, test expected <code>"unknown savings"</code> but data had <code>"unknown/no savings account"</code>. Additionally, <code>parametrize_with_checks</code> fed numpy arrays to a DataFrame-only transformer.
-      </td>
-      <td>
-        <div class="bug-fix">Swapped to <code>TransformerMixin, BaseEstimator</code>. Fixed test assertion to match actual data label. Replaced <code>parametrize_with_checks</code> with explicit <code>TestSklearnContract</code> class (clone, get/set_params, repr, fit_transform).</div>
-      </td>
-    </tr>
-
-  </tbody>
-</table>
-</div>
-
-<!-- ═══════════════════════════════════════════════════════ -->
 <!-- TAB 7: ISSUES & STATUS                                 -->
 <!-- ═══════════════════════════════════════════════════════ -->
 <div id="issues" class="tab-content">
-<h3>Architecture Decisions &amp; TODOs</h3>
-<table>
-  <thead>
-    <tr><th>Status</th><th>Item</th><th>Notes</th></tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><span style="color:var(--green); font-weight:600;">✅ Fixed</span></td>
-      <td>CatBoost pipeline builder — hook approach</td>
-      <td>Added <code>_build_pipeline()</code> hook in <code>BaseModelTrainer</code>. CatBoost overrides it to call <code>build_catboost_pipeline()</code> with native categorical handling.</td>
-    </tr>
-    <tr>
-      <td><span style="color:var(--green); font-weight:600;">✅ Done</span></td>
-      <td><code>app/streamlit_app.py</code> completed</td>
-      <td>Full app with 14 categorical + 7 numeric feature inputs, Random Samples + Manual Input tabs, per-model bars, cost explainer. Feature values match FeatureEngineer exactly.</td>
-    </tr>
-    <tr>
-      <td><span style="color:var(--green); font-weight:600;">✅ Done</span></td>
-      <td><code>scripts/export_pipelines.py</code> created</td>
-      <td>Exports MLflow registry models to <code>.pkl</code> files. CLI with <code>--output-dir</code> and <code>--versions</code> options.</td>
-    </tr>
-    <tr>
-      <td><span style="color:var(--green); font-weight:600;">✅ Done</span></td>
-      <td><code>docs/instructions.md</code> created</td>
-      <td>Comprehensive guide: installation, data prep, config reference, training, ensemble, export, Streamlit, Docker, CI/CD, troubleshooting.</td>
-    </tr>
-    <tr>
-      <td><span style="color:var(--green); font-weight:600;">✅ Fixed</span></td>
-      <td>CI references data-processing scripts</td>
-      <td><code>scripts/process_data.py</code> and <code>scripts/split_data.py</code> now exist. Raw data in <code>data/raw/</code>, mappings match <code>FeatureEngineer</code> exactly.</td>
-    </tr>
-    <tr>
-      <td><span style="color:var(--green); font-weight:600;">✅ Fixed</span></td>
-      <td>Docker smoke test requires model files</td>
-      <td>Smoke test now conditional: <code>if ls app/models/*_pipeline.pkl</code>. Skips gracefully when no <code>.pkl</code> files exist.</td>
-    </tr>
-    <tr>
-      <td><span class="severity-info">ℹ️ TODO</span></td>
-      <td><code>main.py</code> is still a placeholder</td>
-      <td>Needs training orchestration: load data, instantiate trainers, run train(), build ensemble.</td>
-    </tr>
-    <tr>
-      <td><span style="color:var(--green); font-weight:600;">✅ Done</span></td>
-      <td>Test suite — 25 tests, all passing</td>
-      <td><code>tests/</code> directory has 4 files: <code>conftest.py</code> (stratified fixtures), <code>test_features.py</code> (14 tests — domain transforms + sklearn contract), <code>test_ensemble.py</code> (6 tests — integration), <code>test_prediction.py</code> (5 tests — end-to-end). Covers FeatureEngineer, pipeline fit, ensemble logic, and prediction API.</td>
-    </tr>
-  </tbody>
-</table>
-
 <h3>Imbalance Handling Strategy (per model)</h3>
 <table>
   <thead>
@@ -932,13 +680,18 @@ classDiagram
   </thead>
   <tbody>
     <tr><td>LRC</td><td>SMOTE + class_weight</td><td><code>class_weight="balanced"</code> + SMOTE resampling (k_neighbors tunable)</td></tr>
-    <tr><td>RFC</td><td>Cost-sensitive weights</td><td><code>class_weight={0:1, 1:5}</code> — matches 5:1 cost ratio</td></tr>
+    <tr><td>RFC</td><td>Balanced class weights</td><td><code>class_weight="balanced"</code>, for imbalance rather than cost</td></tr>
     <tr><td>SVC</td><td>SVMSMOTE</td><td>SVM-specific SMOTE + optional <code>class_weight="balanced"</code></td></tr>
-    <tr><td>CatBoost</td><td>scale_pos_weight</td><td><code>scale_pos_weight=5.0</code> — built-in cost sensitivity</td></tr>
+    <tr><td>CatBoost</td><td>scale_pos_weight</td><td><code>scale_pos_weight=0.42</code> — inverse class ratio (good is the majority)</td></tr>
   </tbody>
 </table>
+<p style="color:var(--text-muted); font-size:0.85rem;">
+  These strategies address <strong>class imbalance</strong> only. The 5:1 cost matrix is used in
+  one place, decision-threshold tuning on the validation set, so the cost asymmetry is never
+  double-counted in the model weights.
+</p>
 
-<h3>Prediction Flow (NEW)</h3>
+<h3>Prediction Flow</h3>
 <table>
   <thead>
     <tr><th>Consumer</th><th>Load Method</th><th>Path</th></tr>
