@@ -10,7 +10,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 # Copy dependency files first (Docker layer caching)
 # These change far less often than source code.
 # If only source changes, Docker skips this expensive layer.
-COPY pyproject.toml uv.lock README.md ./
+COPY pyproject.toml uv.lock README.md LICENSE ./
 
 # Install dependencies to a virtual environment (include the 'app' extra for streamlit)
 RUN uv sync --no-dev --extra app --frozen
