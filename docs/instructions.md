@@ -24,8 +24,6 @@
 13. [Linting & Formatting](#13-linting--formatting)
 14. [MLflow Tracking](#14-mlflow-tracking)
 15. [Cost Matrix & Threshold Tuning](#15-cost-matrix--threshold-tuning)
-16. [Known Issues & Notes](#16-known-issues--notes)
-17. [Troubleshooting](#17-troubleshooting)
 
 ---
 
@@ -195,12 +193,35 @@ uv run python -c "from credit_risk_model.config.core import config; print(config
 
 ## 4. Data Preparation
 
-The project expects **pre-processed** CSV files in `data/processed/`:
+Two scripts turn the raw UCI file into the CSVs every later stage reads:
+
+```bash
+uv run python scripts/process_data.py   # german.data -> german_credit.csv
+uv run python scripts/split_data.py     # -> train_data.csv, test_data.csv, app sample
+```
+
+The dataset is not stored in this repository. On first run `process_data.py` downloads
+`german.data` from UCI into `data/raw/`, then verifies its SHA-256. The checksum is pinned
+because `split_data.py` splits on a row hash, so a different source file would silently
+change every metric this project reports. If UCI is unreachable, the error message gives the
+URL and the path to save it to.
+
+`process_data.py` then maps the coded UCI attributes (A11, A12, ...) to readable labels.
+`split_data.py` performs a stratified hash-based split, so the same row always lands in the
+same side of the split without needing a random seed. It also writes a copy of the test set
+to `app/data/sample_data.csv` for the Streamlit app.
+
+The dataset is used under CC BY 4.0 and is credited in the README and `LICENSE`. Its original
+documentation is kept at `data/raw/description.txt`.
+
+Both write into `data/processed/`:
 
 | File               | Description                          |
 | ------------------ | ------------------------------------ |
 | `train_data.csv`   | Training split (841 rows)            |
 | `test_data.csv`    | Hold-out test split (159 rows)       |
+
+Use `--test-size` to change the split fraction (the shipped data uses `0.15`).
 
 ### 4.1 Expected format
 
@@ -209,27 +230,19 @@ The project expects **pre-processed** CSV files in `data/processed/`:
   `FeatureEngineer` (the first pipeline step) handles all domain
   transformations, category consolidation, and derived features.
 
-### 4.2 Placing the data
+### 4.2 Bringing your own CSVs
+
+To skip the scripts and supply prepared files directly, put them where `core.py` resolves
+the data directory:
 
 ```bash
-# Copy or move your prepared CSVs into the expected location
 cp /path/to/your/train_data.csv  data/processed/
 cp /path/to/your/test_data.csv   data/processed/
+cp /path/to/your/test_data.csv   app/data/sample_data.csv   # for the app's Random Samples tab
 ```
 
-The path is resolved by `core.py` as:
-
-```
+```text
 <project_root>/data/processed/
-```
-
-### 4.3 Sample data for the Streamlit app
-
-The Streamlit app can also display a "Random Samples" tab that draws rows from
-a sample CSV. Place a copy of `test_data.csv` at:
-
-```
-app/data/sample_data.csv
 ```
 
 ---
@@ -302,35 +315,28 @@ BaseModelTrainer  (base.py)
 
 ### 6.2 Running training
 
-```python
-from credit_risk_model.training.train_lrc import LRCTrainer
-from credit_risk_model.training.train_rf import RFTrainer
-from credit_risk_model.training.train_svc import SVCTrainer
-from credit_risk_model.training.train_catboost import CatBoostTrainer
-
-# Train all four models (each logs to its own MLflow experiment)
-for Trainer in [LRCTrainer, RFTrainer, SVCTrainer, CatBoostTrainer]:
-    trainer = Trainer()
-    trainer.train()
-```
-
-Or from the command line:
+`main.py` is the entry point. It loads the canonical split and runs each trainer in turn,
+with every model logging to its own MLflow experiment.
 
 ```bash
-uv run python -c "
-from credit_risk_model.training.train_lrc import LRCTrainer
-from credit_risk_model.training.train_rf import RFTrainer
-from credit_risk_model.training.train_svc import SVCTrainer
-from credit_risk_model.training.train_catboost import CatBoostTrainer
+uv run python main.py                # all four models, with Bayesian search
+uv run python main.py --no-tune      # all four, default hyperparameters (much faster)
+uv run python main.py --model lrc    # a single model: lrc, rfc, svc or cat
+```
 
-for T in [LRCTrainer, RFTrainer, SVCTrainer, CatBoostTrainer]:
-    T().train()
-"
+The trainers can also be driven directly, which is what the notebook does:
+
+```python
+from credit_risk_model.data import load_train_validation_split
+from credit_risk_model.training.train_lrc import LRCTrainer
+
+X_train, X_val, y_train, y_val = load_train_validation_split()
+LRCTrainer().train(X_train, y_train, X_val, y_val)
 ```
 
 ### 6.3 What happens during `.train()`
 
-1. Load `train_data.csv` and split off a validation set (`val_size` rows)
+1. Receive the train/validation split from `load_train_validation_split()` in `data.py`
 2. Apply `FeatureEngineer` to generate derived features
 3. Build the full sklearn `Pipeline` via `_build_pipeline()`:
    - LRC / RFC / SVC → `build_pipeline()` (generic encoder-based)
@@ -517,8 +523,8 @@ Runs on: ubuntu-latest
 2. **Installs uv** via `astral-sh/setup-uv@v3`
 3. **Installs Python 3.13** via `uv python install 3.13`
 4. **Installs ruff** via `uv tool install ruff`
-5. **Lints** with `uv run ruff check src/ tests/ app/`
-6. **Format checks** with `uv run ruff format --check src/ tests/ app/`
+5. **Lints** with `uv run ruff check src/ tests/ app/ scripts/ main.py`
+6. **Format checks** with `uv run ruff format --check src/ tests/ app/ scripts/ main.py`
 
 ### 11.2 Job: `test`
 
@@ -610,16 +616,16 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 
 ```bash
 # Check for lint errors
-uv run ruff check src/ tests/ app/
+uv run ruff check src/ tests/ app/ scripts/ main.py
 
 # Auto-fix lint errors
-uv run ruff check --fix src/ tests/ app/
+uv run ruff check --fix src/ tests/ app/ scripts/ main.py
 
 # Check formatting
-uv run ruff format --check src/ tests/ app/
+uv run ruff format --check src/ tests/ app/ scripts/ main.py
 
 # Auto-format
-uv run ruff format src/ tests/ app/
+uv run ruff format src/ tests/ app/ scripts/ main.py
 ```
 
 ---
@@ -690,133 +696,3 @@ expected_cost = FP × cost_FP + FN × cost_FN
 The ensemble's own threshold is chosen the same way, by `scripts/select_ensemble.py`,
 which writes it into `model_config.yml` (default 0.66). It can be overridden for a
 diagnostic run with `score_ensemble.py --threshold <value>`.
-
----
-
-## 16. Known Issues & Notes
-
-### 16.1 CI: Codecov requires a repository secret
-
-The coverage upload step uses `codecov/codecov-action@v4`, which requires a
-`CODECOV_TOKEN` secret to be configured in your GitHub repository settings.
-Without it, the upload will fail (non-fatal — tests still pass).
-
-### 16.2 CatBoost pipeline builder
-
-The CatBoost trainer uses a dedicated `build_catboost_pipeline()` function
-(via the `_build_pipeline()` hook override) because CatBoost handles
-categorical features natively instead of through external encoders. The
-`estimator` parameter passed to the hook is ignored — `build_catboost_pipeline`
-creates its own `CatBoostSklearnWrapper` internally.
-
-### 16.3 Feature value matching
-
-Three sources must agree on categorical string values:
-
-1. **`scripts/process_data.py`** — maps UCI codes to human-readable labels
-2. **`processing/features.py`** (`FeatureEngineer`) — uses set-membership
-   checks for category consolidation
-3. **`app/streamlit_app.py`** — dropdown values in the manual input form
-
-If any of these use different strings, `FeatureEngineer` won't consolidate
-categories correctly and models will receive unexpected levels.
-
-Examples of values that must match exactly:
-
-- `savings_account_bonds`: `"100 - 500 DM"` (not `"100 <= ... < 500 DM"`)
-- `credit_history`: `"no credits taken/all credits paid back duly"`
-  (not `"no credits/all paid duly"`)
-
-### 16.4 CatBoostSklearnWrapper and sklearn 1.8+
-
-The `CatBoostSklearnWrapper` class implements `__sklearn_tags__()` by
-delegating to `super().__sklearn_tags__()`. Older implementations that
-called `Tags()` directly will break on sklearn ≥ 1.8, which requires
-`estimator_type` and `target_tags` as positional arguments.
-
-Similarly, `FeatureEngineer` and `BaselineEngineer` must inherit
-`TransformerMixin` **before** `BaseEstimator` to ensure sklearn's
-tag-resolution machinery works correctly:
-
-```python
-# Correct (sklearn >= 1.6)
-class FeatureEngineer(TransformerMixin, BaseEstimator): ...
-
-# Wrong: causes RuntimeError during tag resolution
-class FeatureEngineer(BaseEstimator, TransformerMixin): ...
-```
-
----
-
-## 17. Troubleshooting
-
-### `ModuleNotFoundError: No module named 'credit_risk_model'`
-
-The package isn't installed in the active environment.
-
-```bash
-uv sync            # creates .venv and installs in editable mode
-uv run python ...  # ensures the right venv is used
-```
-
-### `FileNotFoundError: ... train_data.csv`
-
-Run the data preparation pipeline to generate the training files:
-
-```bash
-uv run python scripts/process_data.py
-uv run python scripts/split_data.py --test-size 0.15
-```
-
-See [§4 Data Preparation](#4-data-preparation).
-
-### `RuntimeError: Failed to load model 'lrc' from registry`
-
-The model hasn't been trained yet. Run training first:
-
-```bash
-uv run python -c "from credit_risk_model.training.train_lrc import LRCTrainer; LRCTrainer().train()"
-```
-
-### `FileNotFoundError: Pipeline file not found: .../lrc_pipeline.pkl`
-
-Run the export script to create pickle files from MLflow:
-
-```bash
-uv run python scripts/export_pipelines.py
-```
-
-### Streamlit app shows "No models found"
-
-Ensure `app/models/` contains all four `.pkl` files. See [§8](#8-exporting-pipelines).
-
-### Docker container crashes immediately
-
-Check `docker logs <container>` — most likely `app/models/` is empty.
-Export pipelines first, then rebuild or restart:
-
-```bash
-uv run python scripts/export_pipelines.py
-docker compose restart app
-```
-
-### MLflow UI shows "No experiments"
-
-Ensure the tracking URI matches. By default, models log to
-`sqlite:///mlflow.db` (relative to your working directory).
-Start the UI from the project root:
-
-```bash
-cd /path/to/credit-risk-project
-uv run mlflow ui --backend-store-uri sqlite:///mlflow.db
-```
-
-### ruff reports line-length errors
-
-The project uses `line-length = 100` in `pyproject.toml`. If your editor
-reports 79-character limits, ensure it's reading the project's ruff config,
-not a global one. Run ruff directly to verify:
-
-```bash
-uv run ruff check --select E501 src/
-```
