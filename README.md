@@ -8,6 +8,8 @@ artifacts, and serves predictions through a Streamlit app.
 
 **Hosted demo:** [Try here](https://credit-risk-h6wzqyepauzgpp29kypx9e.streamlit.app)
 
+**Project write-up:** [Read the case study](https://ntinasf.github.io/projects/credit-risk-classifier)
+
 ---
 
 ## Overview
@@ -270,8 +272,7 @@ under the same CC BY 4.0 terms, and the 5:1 cost matrix this project optimises c
 
 ## Documentation
 
-<!-- Portfolio write-up: add the link here once it is published. -->
-
+- [Portfolio write-up](https://ntinasf.github.io/projects/credit-risk-classifier) — the project as a narrative case study
 - [`docs/instructions.md`](docs/instructions.md) — setup, configuration,
   workflow, and testing
 - [`docs/architecture.html`](docs/architecture.html) — system overview and
