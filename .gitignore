@@ -14,10 +14,18 @@ wheels/
 # ── Generated data (reproducible via scripts/) ───────
 data/processed/
 
+# ── Source dataset (CC BY 4.0, fetched by scripts/process_data.py) ───
+# Not redistributed here. description.txt stays: it is the dataset's own
+# documentation and carries the attribution.
+data/raw/german.data
+
 # ── ML artifacts ──────────────────────────────────────
 mlruns/
 mlflow.db
 catboost_info/
+
+# ── Notebooks ─────────────────────────────────────────
+.ipynb_checkpoints/
 
 # ── IDE / OS ──────────────────────────────────────────
 .DS_Store
@@ -25,6 +33,15 @@ catboost_info/
 .idea/
 *.swp
 *.swo
+
+# ── Node tooling (diagram regeneration via npx) ───────
+node_modules/
+package-lock.json
+
+# ── Secrets ───────────────────────────────────────────
+.env
+.env.*
+.streamlit/secrets.toml
 
 # ── Test / lint caches ────────────────────────────────
 .pytest_cache/
@@ -35,6 +52,6 @@ htmlcov/
 coverage.xml
 .coverage
 
-# ── Unnecessary files ─────────────────────────────────────────────
-example.ipynb
+# ── Unnecessary files ─────────────────────────────────
+notebooks/example.ipynb
 common_uv_commands.md
